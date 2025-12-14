@@ -1,5 +1,9 @@
 name: Fetch TLE
 
+# grant the workflow write access to repository contents
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: '45 4,12,20 * * *'
@@ -11,6 +15,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - uses: actions/setup-python@v5
         with:
@@ -26,4 +32,6 @@ jobs:
           git config user.email "github-actions@github.com"
           git add starlink_tle_history.csv
           git diff --staged --quiet || git commit -m "Update TLE data"
-          git push
+          # push to the branch that triggered the workflow
+          BRANCH=${GITHUB_REF#refs/heads/}
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:$BRANCH
