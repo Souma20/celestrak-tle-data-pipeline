@@ -5,7 +5,7 @@ import os
 
 # --- CONFIGURATION ---
 URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle"
-CSV_FILE = "starlink_training_data.csv"
+CSV_FILE = "starlink_tle_history.csv"
 
 # --- HELPER: TLE PARSER ---
 # TLEs are "Fixed Width" text. We slice specific positions to get the numbers.
