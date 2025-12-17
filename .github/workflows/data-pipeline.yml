@@ -1,8 +1,7 @@
 name: Fetch TLE
 
-# grant the workflow write access to repository contents
 permissions:
-  contents: write
+  contents: read
 
 on:
   schedule:
@@ -15,8 +14,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
       - uses: actions/setup-python@v5
         with:
@@ -25,13 +22,8 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - run: python script.py
-
-      - run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add starlink_tle_history.csv
-          git diff --staged --quiet || git commit -m "Update TLE data"
-          # push to the branch that triggered the workflow
-          BRANCH=${GITHUB_REF#refs/heads/}
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:$BRANCH
+      # THIS IS THE IMPORTANT CHANGE
+      - name: Run Extraction Script
+        env: 
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python script.py
