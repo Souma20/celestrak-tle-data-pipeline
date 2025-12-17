@@ -25,5 +25,5 @@ jobs:
       # THIS IS THE IMPORTANT CHANGE
       - name: Run Extraction Script
         env: 
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ env.DATABASE_URL }}
         run: python script.py
