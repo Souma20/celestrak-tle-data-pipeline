@@ -5,10 +5,11 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 
 # --- CONFIGURATION ---
-URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle"
+TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle"
+WEATHER_URL = "https://services.swpc.noaa.gov/products/10cm-flux-30-day.json"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# --- HELPER: B-STAR PARSER ---
+# --- HELPER 1: B-STAR PARSER ---
 def parse_bstar(bstar_string):
     """Converts '44559-4' string to float 0.000044559"""
     try:
@@ -21,15 +22,12 @@ def parse_bstar(bstar_string):
     except:
         return None
 
-# --- HELPER: TLE PARSER ---
+# --- HELPER 2: TLE PARSER ---
 def parse_tle_pair(line1, line2, sat_name, fetched_at):
     try:
         # --- LINE 1 ---
         norad_id = int(line1[2:7])
-        
-        # [FIX 1] Extract International Designator (Columns 9-17)
         intl_des = line1[9:17].strip()
-        
         epoch_year = int(line1[18:20])
         epoch_day = float(line1[20:32])
         full_year = 2000 + epoch_year if epoch_year < 57 else 1900 + epoch_year
@@ -50,7 +48,7 @@ def parse_tle_pair(line1, line2, sat_name, fetched_at):
         return {
             'norad_id': norad_id,
             'sat_name': sat_name,
-            'intl_designator': intl_des,  # Added this field
+            'intl_designator': intl_des,
             'epoch_utc': epoch_date,
             'fetched_at_utc': fetched_at,
             'inclination': inclination,
@@ -66,12 +64,58 @@ def parse_tle_pair(line1, line2, sat_name, fetched_at):
         print(f"Error parsing TLE for {sat_name}: {e}")
         return None
 
-def fetch_and_save_to_db():
-    print(f"Fetching data from {URL}...")
+# --- NEW FUNCTION: FETCH SOLAR WEATHER ---
+def fetch_space_weather(engine):
+    print("☀️ Fetching Space Weather (NOAA F10.7)...")
     try:
-        response = requests.get(URL, timeout=10)
+        r = requests.get(WEATHER_URL, timeout=10)
+        data = r.json()
+        
+        # NOAA returns: [['time_tag', 'flux', ...], ['2023-12-01', '140', ...]]
+        records = []
+        for row in data[1:]: # Skip header
+            dt_str = row[0].split(" ")[0] # "2023-12-01"
+            flux = float(row[1])
+            records.append({'date_utc': dt_str, 'f10_7_flux': flux})
+            
+        df_weather = pd.DataFrame(records)
+        # Get Max Flux per day (to ensure uniqueness)
+        df_daily = df_weather.groupby('date_utc')['f10_7_flux'].max().reset_index()
+
+        # Check existing dates in DB to avoid duplicates
+        with engine.connect() as conn:
+            # We cast to text to ensure format matching
+            existing = pd.read_sql("SELECT date_utc::text FROM fact_space_weather", conn)
+        
+        # Filter: Only keep new dates
+        new_weather = df_daily[~df_daily['date_utc'].isin(existing['date_utc'])]
+        
+        if not new_weather.empty:
+            new_weather.to_sql('fact_space_weather', engine, if_exists='append', index=False)
+            print(f"✅ Saved {len(new_weather)} new days of Solar Data.")
+        else:
+            print("☀️ Solar Weather is up to date.")
+            
+    except Exception as e:
+        print(f"⚠️ Space Weather Error: {e}")
+
+# --- MAIN EXECUTOR ---
+def main():
+    if not DATABASE_URL:
+        print("ERROR: DATABASE_URL is missing!")
+        return
+    
+    engine = create_engine(DATABASE_URL)
+    
+    # 1. RUN WEATHER FETCH (Independent)
+    fetch_space_weather(engine)
+
+    # 2. RUN TLE FETCH (Satellites)
+    print(f"🛰️ Fetching TLEs from {TLE_URL}...")
+    try:
+        response = requests.get(TLE_URL, timeout=20)
         response.raise_for_status()
-    except requests.RequestException as e:
+    except Exception as e:
         print(f"Network error: {e}")
         return
 
@@ -79,7 +123,6 @@ def fetch_and_save_to_db():
     fetched_at = datetime.datetime.utcnow()
     records = []
 
-    # Parse Loop
     for i in range(0, len(lines), 3):
         if i + 2 < len(lines):
             name = lines[i].strip()
@@ -90,71 +133,53 @@ def fetch_and_save_to_db():
                 records.append(parsed)
 
     if not records:
-        print("No valid records found.")
+        print("No valid TLE records found.")
         return
 
-    # --- SAVE TO DATABASE ---
-    print(f"Parsed {len(records)} records. Connecting to DB...")
-    
-    if not DATABASE_URL:
-        print("ERROR: DATABASE_URL is missing!")
-        return
-        
-    engine = create_engine(DATABASE_URL)
     df = pd.DataFrame(records)
+    print(f"Parsed {len(df)} records. Checking for new data...")
 
-    # --- [FIX 2] SMART FILTERING (Prevents Crashes) ---
-    
-    # 1. Update Satellites Table
-    # We fetch existing IDs so we don't try to insert duplicates (which crashes the script)
+    # A. Update Satellites Table (Check existing IDs)
     with engine.connect() as conn:
         existing_ids = pd.read_sql("SELECT norad_id FROM dim_satellites", conn)
     
-    # Filter df to only NEW satellites
     new_sats = df[~df['norad_id'].isin(existing_ids['norad_id'])]
     unique_new_sats = new_sats[['norad_id', 'sat_name', 'intl_designator']].drop_duplicates(subset=['norad_id'])
 
     if not unique_new_sats.empty:
-        print(f"found {len(unique_new_sats)} new satellites. Saving...")
+        print(f"Found {len(unique_new_sats)} new satellites. Saving...")
         unique_new_sats.to_sql('dim_satellites', engine, if_exists='append', index=False)
-    else:
-        print("No new satellites found.")
 
-    # 2. Save Telemetry
-    # We want to avoid duplicates. Since we have thousands of rows, we can't query everything.
-    # STRATEGY: We just try to append. If it fails, we catch it. 
-    # (Smart Filtering for 7000 rows is expensive, let's trust the database constraints + chunking)
-    
+    # B. Update Telemetry Table (Check recent duplicates)
     fact_telem = df[[
         'norad_id', 'epoch_utc', 'fetched_at_utc', 'inclination', 
         'raan', 'eccentricity', 'arg_perigee', 'mean_anomaly', 
         'mean_motion', 'b_star_drag', 'rev_number'
     ]]
 
-    # We use a trick: read the MOST RECENT data from DB to filter obvious duplicates from this batch
     try:
-        # Get data from the last 3 days to compare
+        # Check against last 3 days of data to filter duplicates
         query = text("SELECT norad_id, epoch_utc FROM fact_telemetry WHERE epoch_utc > NOW() - INTERVAL '3 days'")
         with engine.connect() as conn:
             recent_data = pd.read_sql(query, conn)
         
-        # Create a 'composite key' for filtering
+        # Composite Key Filter
         recent_data['key'] = recent_data['norad_id'].astype(str) + "_" + pd.to_datetime(recent_data['epoch_utc']).astype(str)
-        fact_telem['key'] = fact_telem['norad_id'].astype(str) + "_" + pd.to_datetime(fact_telem['epoch_utc']).astype(str)
+        fact_telem['key'] = fact_telem['norad_id'].astype(str) + pd.to_datetime(fact_telem['epoch_utc']).astype(str)
         
-        # Filter out rows that already exist
+        # Keep only rows NOT in recent_data
         new_telemetry = fact_telem[~fact_telem['key'].isin(recent_data['key'])].copy()
-        new_telemetry = new_telemetry.drop(columns=['key']) # Clean up
+        new_telemetry = new_telemetry.drop(columns=['key'])
         
         if not new_telemetry.empty:
             print(f"Saving {len(new_telemetry)} new telemetry records...")
             new_telemetry.to_sql('fact_telemetry', engine, if_exists='append', index=False, chunksize=1000)
-            print("✅ Success!")
+            print("✅ Telemetry Saved!")
         else:
             print("No new telemetry data (all duplicates).")
 
     except Exception as e:
-        print(f"⚠️ Error during save: {e}")
+        print(f"⚠️ Save Error: {e}")
 
 if __name__ == "__main__":
-    fetch_and_save_to_db()
+    main()
