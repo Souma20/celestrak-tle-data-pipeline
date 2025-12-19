@@ -164,8 +164,11 @@ def main():
             recent_data = pd.read_sql(query, conn)
         
         # Composite Key Filter
+        # CORRECTED LINES (Replace lines 162-163):
         recent_data['key'] = recent_data['norad_id'].astype(str) + "_" + pd.to_datetime(recent_data['epoch_utc']).astype(str)
-        fact_telem['key'] = fact_telem['norad_id'].astype(str) + pd.to_datetime(fact_telem['epoch_utc']).astype(str)
+        
+        # FIX: Added the "_" here so it matches the line above
+        fact_telem['key'] = fact_telem['norad_id'].astype(str) + "_" + pd.to_datetime(fact_telem['epoch_utc']).astype(str)
         
         # Keep only rows NOT in recent_data
         new_telemetry = fact_telem[~fact_telem['key'].isin(recent_data['key'])].copy()
