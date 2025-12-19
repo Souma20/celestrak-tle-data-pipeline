@@ -11,7 +11,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- HELPER 1: B-STAR PARSER ---
 def parse_bstar(bstar_string):
-    """Converts '44559-4' string to float 0.000044559"""
     try:
         bstar_string = bstar_string.strip()
         if '-' in bstar_string[-2:] or '+' in bstar_string[-2:]:
@@ -25,7 +24,7 @@ def parse_bstar(bstar_string):
 # --- HELPER 2: TLE PARSER ---
 def parse_tle_pair(line1, line2, sat_name, fetched_at):
     try:
-        # --- LINE 1 ---
+        # LINE 1
         norad_id = int(line1[2:7])
         intl_des = line1[9:17].strip()
         epoch_year = int(line1[18:20])
@@ -36,7 +35,7 @@ def parse_tle_pair(line1, line2, sat_name, fetched_at):
         raw_bstar = line1[53:61].strip()
         bstar_val = parse_bstar(raw_bstar)
 
-        # --- LINE 2 ---
+        # LINE 2
         inclination = float(line2[8:16])
         raan = float(line2[17:25])
         eccentricity = float("0." + line2[26:33])
@@ -64,30 +63,26 @@ def parse_tle_pair(line1, line2, sat_name, fetched_at):
         print(f"Error parsing TLE for {sat_name}: {e}")
         return None
 
-# --- NEW FUNCTION: FETCH SOLAR WEATHER ---
+# --- FUNCTION: FETCH SOLAR WEATHER ---
 def fetch_space_weather(engine):
     print("☀️ Fetching Space Weather (NOAA F10.7)...")
     try:
         r = requests.get(WEATHER_URL, timeout=10)
         data = r.json()
         
-        # NOAA returns: [['time_tag', 'flux', ...], ['2023-12-01', '140', ...]]
         records = []
-        for row in data[1:]: # Skip header
+        # [FIX 2] Parse only the 2 columns NOAA provides
+        for row in data[1:]: 
             dt_str = row[0].split(" ")[0] # "2023-12-01"
             flux = float(row[1])
             records.append({'date_utc': dt_str, 'f10_7_flux': flux})
             
         df_weather = pd.DataFrame(records)
-        # Get Max Flux per day (to ensure uniqueness)
         df_daily = df_weather.groupby('date_utc')['f10_7_flux'].max().reset_index()
 
-        # Check existing dates in DB to avoid duplicates
         with engine.connect() as conn:
-            # We cast to text to ensure format matching
             existing = pd.read_sql("SELECT date_utc::text FROM fact_space_weather", conn)
         
-        # Filter: Only keep new dates
         new_weather = df_daily[~df_daily['date_utc'].isin(existing['date_utc'])]
         
         if not new_weather.empty:
@@ -107,10 +102,10 @@ def main():
     
     engine = create_engine(DATABASE_URL)
     
-    # 1. RUN WEATHER FETCH (Independent)
+    # 1. RUN WEATHER FETCH
     fetch_space_weather(engine)
 
-    # 2. RUN TLE FETCH (Satellites)
+    # 2. RUN TLE FETCH
     print(f"🛰️ Fetching TLEs from {TLE_URL}...")
     try:
         response = requests.get(TLE_URL, timeout=20)
@@ -139,7 +134,7 @@ def main():
     df = pd.DataFrame(records)
     print(f"Parsed {len(df)} records. Checking for new data...")
 
-    # A. Update Satellites Table (Check existing IDs)
+    # A. Update Satellites Table
     with engine.connect() as conn:
         existing_ids = pd.read_sql("SELECT norad_id FROM dim_satellites", conn)
     
@@ -150,7 +145,7 @@ def main():
         print(f"Found {len(unique_new_sats)} new satellites. Saving...")
         unique_new_sats.to_sql('dim_satellites', engine, if_exists='append', index=False)
 
-    # B. Update Telemetry Table (Check recent duplicates)
+    # B. Update Telemetry Table
     fact_telem = df[[
         'norad_id', 'epoch_utc', 'fetched_at_utc', 'inclination', 
         'raan', 'eccentricity', 'arg_perigee', 'mean_anomaly', 
@@ -158,19 +153,15 @@ def main():
     ]]
 
     try:
-        # Check against last 3 days of data to filter duplicates
         query = text("SELECT norad_id, epoch_utc FROM fact_telemetry WHERE epoch_utc > NOW() - INTERVAL '3 days'")
         with engine.connect() as conn:
             recent_data = pd.read_sql(query, conn)
         
-        # Composite Key Filter
-        # CORRECTED LINES (Replace lines 162-163):
+        # [FIX 3] The Critical "Underscore" Fix
+        # We ensure BOTH sides have the underscore separator so the keys match perfectly.
         recent_data['key'] = recent_data['norad_id'].astype(str) + "_" + pd.to_datetime(recent_data['epoch_utc']).astype(str)
-        
-        # FIX: Added the "_" here so it matches the line above
         fact_telem['key'] = fact_telem['norad_id'].astype(str) + "_" + pd.to_datetime(fact_telem['epoch_utc']).astype(str)
         
-        # Keep only rows NOT in recent_data
         new_telemetry = fact_telem[~fact_telem['key'].isin(recent_data['key'])].copy()
         new_telemetry = new_telemetry.drop(columns=['key'])
         
