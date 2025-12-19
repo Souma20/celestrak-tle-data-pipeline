@@ -71,19 +71,32 @@ def fetch_space_weather(engine):
         data = r.json()
         
         records = []
-        # [FIX 2] Parse only the 2 columns NOAA provides
         for row in data[1:]: 
-            dt_str = row[0].split(" ")[0] # "2023-12-01"
+            # Parse only the 2 columns NOAA provides
+            dt_str = row[0].split(" ")[0] 
             flux = float(row[1])
             records.append({'date_utc': dt_str, 'f10_7_flux': flux})
             
-        df_weather = pd.DataFrame(records)
-        df_daily = df_weather.groupby('date_utc')['f10_7_flux'].max().reset_index()
+        df_new = pd.DataFrame(records)
+        df_new['date_utc'] = pd.to_datetime(df_new['date_utc']).dt.date
 
+        # Check existing dates in DB
         with engine.connect() as conn:
-            existing = pd.read_sql("SELECT date_utc::text FROM fact_space_weather", conn)
+            # Create table if missing (safety net)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS fact_space_weather (
+                    date_utc DATE PRIMARY KEY,
+                    f10_7_flux FLOAT
+                );
+            """))
+            conn.commit()
+            
+            existing = pd.read_sql("SELECT date_utc FROM fact_space_weather", conn)
         
-        new_weather = df_daily[~df_daily['date_utc'].isin(existing['date_utc'])]
+        existing_dates = set(pd.to_datetime(existing['date_utc']).dt.date)
+        
+        # Filter: Keep row ONLY if date is NOT in existing_dates
+        new_weather = df_new[~df_new['date_utc'].isin(existing_dates)]
         
         if not new_weather.empty:
             new_weather.to_sql('fact_space_weather', engine, if_exists='append', index=False)
@@ -153,12 +166,12 @@ def main():
     ]]
 
     try:
+        # Check against recent data
         query = text("SELECT norad_id, epoch_utc FROM fact_telemetry WHERE epoch_utc > NOW() - INTERVAL '3 days'")
         with engine.connect() as conn:
             recent_data = pd.read_sql(query, conn)
         
-        # [FIX 3] The Critical "Underscore" Fix
-        # We ensure BOTH sides have the underscore separator so the keys match perfectly.
+        # [CRITICAL FIX] Ensure underscores match on both sides
         recent_data['key'] = recent_data['norad_id'].astype(str) + "_" + pd.to_datetime(recent_data['epoch_utc']).astype(str)
         fact_telem['key'] = fact_telem['norad_id'].astype(str) + "_" + pd.to_datetime(fact_telem['epoch_utc']).astype(str)
         
