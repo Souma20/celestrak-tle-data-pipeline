@@ -20,10 +20,16 @@ The data is modeled in PostgreSQL (Supabase) using a normalized approach to opti
 
 * **fact_telemetry:** High-frequency orbital state vectors (Mean Motion, Drag Term, Inclination).
   - Primary Key: Composite (norad_id, epoch_utc)
+  - <img width="980" height="770" alt="image" src="https://github.com/user-attachments/assets/c5f09a32-14c9-4705-b71f-1cece038be61" />
+
 * **fact_space_weather:** Daily solar flux (F10.7) and geomagnetic indices.
   - Primary Key: date_utc
+  - <img width="1432" height="800" alt="image" src="https://github.com/user-attachments/assets/570f2510-75a4-415a-ac0b-eb5090e1cc79" />
+   <img width="776" height="646" alt="image" src="https://github.com/user-attachments/assets/46f858d4-6b1c-484e-b1c2-00a793ae072b" />
+
 * **dim_satellites:** Static metadata for objects (International Designator, Launch Year).
   - Primary Key: norad_id
+<img width="1295" height="795" alt="image" src="https://github.com/user-attachments/assets/c5194a90-1ccb-4426-ab26-ddc421be5bff" />
 
 ## Technical Features
 
@@ -55,8 +61,11 @@ To protect the warehouse from low-quality data ingestion (Data Drift), the pipel
 
 5. **Automated Execution**
    The pipeline is configured via `.github/workflows/main.yml` to run automatically every 8 hours. Check the "Actions" tab for execution logs.
+   <img width="1469" height="736" alt="image" src="https://github.com/user-attachments/assets/ddf32a0f-bd70-4c7c-b67e-650f497415a9" />
+
 
 # Automated Satellite Telemetry Data Warehouse
+<img width="1209" height="548" alt="image" src="https://github.com/user-attachments/assets/7b540646-2191-4b4c-955e-7af210617567" />
 
 ## Project Overview
 This project is a fully automated, headless ETL (Extract, Transform, Load) pipeline designed to ingest high-volume orbital telemetry data. It integrates real-time satellite tracking data from CelesTrak with space weather indices from NOAA, normalizing and storing them in a PostgreSQL data warehouse to enable historical analysis of orbital decay mechanics.
