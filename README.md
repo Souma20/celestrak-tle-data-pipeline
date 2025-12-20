@@ -25,7 +25,7 @@ The data is modeled in PostgreSQL (Supabase) using a normalized approach to opti
 * **fact_space_weather:** Daily solar flux (F10.7) and geomagnetic indices.
   - Primary Key: date_utc
   - <img width="1432" height="800" alt="image" src="https://github.com/user-attachments/assets/570f2510-75a4-415a-ac0b-eb5090e1cc79" />
-   <img width="776" height="646" alt="image" src="https://github.com/user-attachments/assets/46f858d4-6b1c-484e-b1c2-00a793ae072b" />
+  - <img width="776" height="646" alt="image" src="https://github.com/user-attachments/assets/46f858d4-6b1c-484e-b1c2-00a793ae072b" />
 
 * **dim_satellites:** Static metadata for objects (International Designator, Launch Year).
   - Primary Key: norad_id
