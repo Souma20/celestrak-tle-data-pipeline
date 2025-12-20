@@ -34,15 +34,14 @@ The pipeline utilizes a "Check-then-Write" strategy. Before ingestion, the scrip
 To protect the warehouse from low-quality data ingestion (Data Drift), the pipeline enforces a minimum row count threshold. If an API returns a statistically insignificant sample size (indicating an upstream outage or network error), the write operation is aborted, and the event is logged.
 
 ## Tech Stack
-* **Language:** Python 3.x (pandas, sqlalchemy, requests)
+* **Language:** Python 3.12 (pandas, sqlalchemy, requests)
 * **Database:** PostgreSQL (hosted on Supabase)
 * **Orchestration:** GitHub Actions (CI/CD)
-* **Infrastructure:** Cloud-hosted, serverless execution environment
 
 ## Setup & Usage
 
 1. **Clone the Repository**
-   git clone https://github.com/YourUsername/satellite-etl-pipeline.git
+   git clone https://github.com/Souma20/celestrak-tle-data-pipeline.git
 
 2. **Install Dependencies**
    pip install -r requirements.txt
@@ -57,12 +56,17 @@ To protect the warehouse from low-quality data ingestion (Data Drift), the pipel
 5. **Automated Execution**
    The pipeline is configured via `.github/workflows/main.yml` to run automatically every 8 hours. Check the "Actions" tab for execution logs.
 
+# Automated Satellite Telemetry Data Warehouse
+
+## Project Overview
+This project is a fully automated, headless ETL (Extract, Transform, Load) pipeline designed to ingest high-volume orbital telemetry data. It integrates real-time satellite tracking data from CelesTrak with space weather indices from NOAA, normalizing and storing them in a PostgreSQL data warehouse to enable historical analysis of orbital decay mechanics.
+
+## System Architecture
+
 ```mermaid
 graph LR
     A[NOAA API] -->|JSON Data| C(Python ETL Worker)
     B[CelesTrak API] -->|TLE Data| C
-    C -->|1. Extraction & Parsing| D{Data Quality Gate}
-    D -- "Pass (>1000 records)" --> E[2. Transformation]
-    D -- "Fail (Sample Bias)" --> F[Abort & Log Error]
-    E -->|3. Deduplication Logic| G[(PostgreSQL Warehouse)]
-    G -->|Fact & Dimension Tables| H[Analytics Ready Data]
+    C -->|1. Parsing & Transformation| D[2. Deduplication Logic]
+    D -->|3. Upsert Strategy| E[(PostgreSQL Warehouse)]
+    E -->|Fact & Dimension Tables| F[Analytics Ready Data]
