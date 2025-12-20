@@ -22,7 +22,6 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      # THIS IS THE IMPORTANT CHANGE
       - name: Run Extraction Script
         env: 
           DATABASE_URL: ${{ env.DATABASE_URL }}

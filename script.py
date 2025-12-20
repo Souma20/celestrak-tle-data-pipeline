@@ -4,12 +4,10 @@ import os
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-# --- CONFIGURATION ---
 TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=tle"
 WEATHER_URL = "https://services.swpc.noaa.gov/products/10cm-flux-30-day.json"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# --- HELPER 1: B-STAR PARSER ---
 def parse_bstar(bstar_string):
     try:
         bstar_string = bstar_string.strip()
@@ -21,10 +19,8 @@ def parse_bstar(bstar_string):
     except:
         return None
 
-# --- HELPER 2: TLE PARSER ---
 def parse_tle_pair(line1, line2, sat_name, fetched_at):
     try:
-        # LINE 1
         norad_id = int(line1[2:7])
         intl_des = line1[9:17].strip()
         epoch_year = int(line1[18:20])
@@ -35,7 +31,6 @@ def parse_tle_pair(line1, line2, sat_name, fetched_at):
         raw_bstar = line1[53:61].strip()
         bstar_val = parse_bstar(raw_bstar)
 
-        # LINE 2
         inclination = float(line2[8:16])
         raan = float(line2[17:25])
         eccentricity = float("0." + line2[26:33])
@@ -63,7 +58,6 @@ def parse_tle_pair(line1, line2, sat_name, fetched_at):
         print(f"Error parsing TLE for {sat_name}: {e}")
         return None
 
-# --- FUNCTION: FETCH SOLAR WEATHER ---
 def fetch_space_weather(engine):
     print("☀️ Fetching Space Weather (NOAA F10.7)...")
     try:
@@ -72,7 +66,6 @@ def fetch_space_weather(engine):
         
         records = []
         for row in data[1:]: 
-            # Parse only the 2 columns NOAA provides
             dt_str = row[0].split(" ")[0] 
             flux = float(row[1])
             records.append({'date_utc': dt_str, 'f10_7_flux': flux})
@@ -80,9 +73,7 @@ def fetch_space_weather(engine):
         df_new = pd.DataFrame(records)
         df_new['date_utc'] = pd.to_datetime(df_new['date_utc']).dt.date
 
-        # Check existing dates in DB
         with engine.connect() as conn:
-            # Create table if missing (safety net)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS fact_space_weather (
                     date_utc DATE PRIMARY KEY,
@@ -95,7 +86,6 @@ def fetch_space_weather(engine):
         
         existing_dates = set(pd.to_datetime(existing['date_utc']).dt.date)
         
-        # Filter: Keep row ONLY if date is NOT in existing_dates
         new_weather = df_new[~df_new['date_utc'].isin(existing_dates)]
         
         if not new_weather.empty:
@@ -107,7 +97,6 @@ def fetch_space_weather(engine):
     except Exception as e:
         print(f"⚠️ Space Weather Error: {e}")
 
-# --- MAIN EXECUTOR ---
 def main():
     if not DATABASE_URL:
         print("ERROR: DATABASE_URL is missing!")
@@ -171,7 +160,6 @@ def main():
         with engine.connect() as conn:
             recent_data = pd.read_sql(query, conn)
         
-        # [CRITICAL FIX] Ensure underscores match on both sides
         recent_data['key'] = recent_data['norad_id'].astype(str) + "_" + pd.to_datetime(recent_data['epoch_utc']).astype(str)
         fact_telem['key'] = fact_telem['norad_id'].astype(str) + "_" + pd.to_datetime(fact_telem['epoch_utc']).astype(str)
         
