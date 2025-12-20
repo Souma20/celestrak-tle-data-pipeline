@@ -1,7 +1,7 @@
 # Automated Satellite Telemetry Data Warehouse
 
 ## Project Overview
-This project is a fully automated, headless ETL (Extract, Transform, Load) pipeline designed to ingest high-volume orbital telemetry data. It integrates real-time satellite tracking data from CelesTrak with space weather indices from NOAA, normalizing and storing them in a PostgreSQL data warehouse for long-term historical analysis.
+This project is a fully automated, ETL (Extract, Transform, Load) pipeline designed to ingest high-volume orbital telemetry data. It integrates real-time satellite tracking data from CelesTrak with space weather indices from NOAA, normalizing and storing them in a PostgreSQL data warehouse for long-term historical analysis.
 
 The system is designed with a "Quality-First" architecture, implementing strict data validation gates and logic to ensure warehouse integrity without manual intervention.
 
