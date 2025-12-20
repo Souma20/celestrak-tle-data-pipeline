@@ -12,7 +12,7 @@ The system is designed with a "Quality-First" architecture, implementing strict 
 2. **Transformation:**
    - Raw TLE strings are parsed to extract orbital elements (Inclination, Eccentricity, B* Drag).
    - Timestamp alignment and normalization.
-3. **Loading:** Data is upserted into PostgreSQL. Custom logic checks for existing Primary Keys (Satellite ID + Epoch Time) to prevent duplication, ensuring idempotency.
+3. **Loading:** Data is upserted into PostgreSQL. Custom logic checks for existing Primary Keys (Satellite ID + Epoch Time) to prevent duplication.
 4. **Orchestration:** GitHub Actions triggers the pipeline on a fixed 8-hour schedule (CRON).
 
 ### Database Schema (Star Schema)
